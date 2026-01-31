@@ -55,35 +55,45 @@ ${transcript}
 
 IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado buscando el texto en los chunks de transcripción.`;
 
-      console.log(`[analyzeTranscript] Sending request to Gemini API...`);
+      console.log(`[analyzeTranscript] Sending request to Gemini API with streaming...`);
       const requestStart = Date.now();
 
-      // Create timeout promise (2 minutes max for transcript analysis)
-      const TIMEOUT_MS = 120000; // 2 minutes
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Gemini API timeout after ${TIMEOUT_MS / 1000}s`));
-        }, TIMEOUT_MS);
+      // Use STREAMING for better UX (like Cursor/Copilot)
+      const stream = ai.models.generateContentStream({
+        model: 'gemini-3-flash-preview',
+        contents: [prompt],
+        config: {
+          temperature: 1.0, // Gemini 3 optimized at default temp (official docs)
+        },
       });
 
-      const result = await Promise.race([
-        ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: [prompt],
-          config: {
-            temperature: 0.3, // Reduced from 0.4 for faster processing
-          },
-        }),
-        timeoutPromise,
-      ]) as any;
+      let fullText = '';
+      let chunkCount = 0;
+      let firstChunkTime = 0;
 
-      const requestTime = ((Date.now() - requestStart) / 1000).toFixed(1);
-      console.log(`[analyzeTranscript] ✓ Gemini API responded in ${requestTime}s`);
+      console.log(`[analyzeTranscript] 🌊 Streaming started...`);
 
-      const text = result.text || '';
+      for await (const chunk of stream) {
+        chunkCount++;
+        if (chunkCount === 1) {
+          firstChunkTime = ((Date.now() - requestStart) / 1000).toFixed(1);
+          console.log(`[analyzeTranscript] ⚡ First chunk received in ${firstChunkTime}s`);
+        }
+
+        const chunkText = chunk.text || '';
+        fullText += chunkText;
+
+        // Log progress every 10 chunks
+        if (chunkCount % 10 === 0) {
+          console.log(`[analyzeTranscript] 📦 Received ${chunkCount} chunks (${fullText.length} chars so far)...`);
+        }
+      }
+
+      const totalTime = ((Date.now() - requestStart) / 1000).toFixed(1);
+      console.log(`[analyzeTranscript] ✓ Streaming completed in ${totalTime}s (${chunkCount} chunks, first chunk: ${firstChunkTime}s)`);
 
       // Parse JSON response
-      const rawMentions = parseRawMentions(text);
+      const rawMentions = parseRawMentions(fullText);
 
       // Try to match timestamps using transcript chunks
       const mentionsWithTimestamps = rawMentions.map(mention => {
@@ -178,7 +188,7 @@ IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado.`;
         model: 'gemini-3-flash-preview',
         contents: [prompt],
         config: {
-          temperature: 0.3,
+          temperature: 1.0,
         },
       });
 
@@ -262,7 +272,7 @@ export async function analyzeVideoSegment(
         model: 'gemini-3-flash-preview',
         contents: [videoPart, STEP1_EXTRACTION_PROMPT],
         config: {
-          temperature: 0.4,
+          temperature: 1.0,
           mediaResolution: mediaRes,
         },
       });
@@ -332,7 +342,7 @@ export async function completeReferenceWithSearch(
           model: 'gemini-3-flash-preview',
           contents: [prompt],
           config: {
-            temperature: 0.3, // Lower temperature for more factual responses
+            temperature: 1.0, // Lower temperature for more factual responses
             tools: [{ googleSearch: {} }], // Google Search grounding for factual verification
           },
         }),
@@ -453,7 +463,7 @@ REGLAS CRÍTICAS:
           model: 'gemini-3-flash-preview',
           contents: [prompt],
           config: {
-            temperature: 0.1, // Lower temperature = faster, more deterministic (was 0.3)
+            temperature: 1.0, // Lower temperature = faster, more deterministic (was 0.3)
             tools: [{ googleSearch: {} }], // Google Search grounding for factual verification
           },
         }),
