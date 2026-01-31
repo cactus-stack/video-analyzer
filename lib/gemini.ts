@@ -1,6 +1,12 @@
 import { GoogleGenAI, createPartFromUri, MediaResolution } from '@google/genai';
 import { RawMention, Book, Paper, WebSource, Author } from './types';
 import { STEP1_EXTRACTION_PROMPT, getStep2CompletionPrompt } from './prompt';
+import {
+  needsChunking,
+  chunkTranscript,
+  deduplicateChunkedMentions,
+  formatChunkInfo
+} from './transcript-chunker';
 
 /**
  * Sleep utility for retry delays
@@ -17,6 +23,13 @@ export async function analyzeTranscript(
   transcriptChunks: Array<{ text: string; offset: number; duration: number }>,
   apiKey: string
 ): Promise<RawMention[]> {
+  // Check if transcript needs chunking
+  if (needsChunking(transcript)) {
+    console.log(`📊 Large transcript detected (${transcript.length} chars), using chunking strategy...`);
+    return await analyzeTranscriptWithChunking(transcript, transcriptChunks, apiKey);
+  }
+
+  // Small transcript - process normally
   const MAX_RETRIES = 3;
   let lastError: any;
 
@@ -88,6 +101,91 @@ IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado buscan
   }
 
   throw new Error(`Failed to analyze transcript: ${lastError?.message || 'Unknown error'}`);
+}
+
+/**
+ * Analyze large transcript using chunking strategy
+ * Splits transcript into manageable chunks and processes in parallel
+ */
+async function analyzeTranscriptWithChunking(
+  transcript: string,
+  transcriptChunks: Array<{ text: string; offset: number; duration: number }>,
+  apiKey: string
+): Promise<RawMention[]> {
+  const chunks = chunkTranscript(transcript);
+
+  console.log(`  → Chunking: ${chunks.length} chunks for ${transcript.length} chars transcript`);
+  console.log(`  → Processing chunks in parallel (max 3 at a time)...`);
+
+  const MAX_PARALLEL_CHUNKS = 3;
+  const allMentions: RawMention[][] = [];
+
+  // Process chunks in parallel groups
+  for (let i = 0; i < chunks.length; i += MAX_PARALLEL_CHUNKS) {
+    const parallelChunks = chunks.slice(i, Math.min(i + MAX_PARALLEL_CHUNKS, chunks.length));
+
+    console.log(`  [chunk-group ${Math.floor(i / MAX_PARALLEL_CHUNKS) + 1}/${Math.ceil(chunks.length / MAX_PARALLEL_CHUNKS)}] Processing ${parallelChunks.length} chunks in parallel...`);
+
+    const chunkPromises = parallelChunks.map(async (chunk) => {
+      const ai = new GoogleGenAI({ apiKey });
+
+      console.log(`    ${formatChunkInfo(chunk)}`);
+
+      const prompt = `${STEP1_EXTRACTION_PROMPT}
+
+TRANSCRIPCIÓN DEL VIDEO (Parte ${chunk.index + 1} de ${chunk.total}):
+${chunk.text}
+
+IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado.`;
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [prompt],
+        config: {
+          temperature: 0.3,
+        },
+      });
+
+      const text = result.text || '';
+      const mentions = parseRawMentions(text);
+
+      console.log(`    ✓ Chunk ${chunk.index + 1} completed: ${mentions.length} mentions found`);
+
+      return mentions;
+    });
+
+    const chunkResults = await Promise.all(chunkPromises);
+    allMentions.push(...chunkResults);
+
+    // Small delay between groups
+    if (i + MAX_PARALLEL_CHUNKS < chunks.length) {
+      await sleep(500);
+    }
+  }
+
+  // Deduplicate mentions from overlapping chunks
+  const deduplicated = deduplicateChunkedMentions(allMentions);
+
+  console.log(`  ✓ Chunking completed: ${deduplicated.length} unique mentions (from ${allMentions.flat().length} total)`);
+
+  // Try to match timestamps using transcript chunks
+  return deduplicated.map(mention => {
+    const matchingChunk = transcriptChunks.find(chunk =>
+      chunk.text.toLowerCase().includes(mention.rawText.toLowerCase()) ||
+      chunk.text.toLowerCase().includes(mention.context.toLowerCase())
+    );
+
+    if (matchingChunk) {
+      const minutes = Math.floor(matchingChunk.offset / 60);
+      const seconds = matchingChunk.offset % 60;
+      return {
+        ...mention,
+        timestamp: `${minutes}:${seconds.toString().padStart(2, '0')}`,
+      };
+    }
+
+    return mention;
+  });
 }
 
 /**
