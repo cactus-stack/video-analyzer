@@ -161,51 +161,43 @@ async function analyzeTranscriptWithChunking(
   const chunks = chunkTranscript(transcript);
 
   console.log(`  → Chunking: ${chunks.length} chunks for ${transcript.length} chars transcript`);
-  console.log(`  → Processing chunks in parallel (max 3 at a time)...`);
+  console.log(`  → Processing chunks SEQUENTIALLY (memory-efficient for large transcripts)...`);
 
-  const MAX_PARALLEL_CHUNKS = 3;
   const allMentions: RawMention[][] = [];
 
-  // Process chunks in parallel groups
-  for (let i = 0; i < chunks.length; i += MAX_PARALLEL_CHUNKS) {
-    const parallelChunks = chunks.slice(i, Math.min(i + MAX_PARALLEL_CHUNKS, chunks.length));
+  // Process chunks ONE AT A TIME to avoid heap OOM on huge transcripts (>200K chars)
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
 
-    console.log(`  [chunk-group ${Math.floor(i / MAX_PARALLEL_CHUNKS) + 1}/${Math.ceil(chunks.length / MAX_PARALLEL_CHUNKS)}] Processing ${parallelChunks.length} chunks in parallel...`);
+    console.log(`  [chunk ${i + 1}/${chunks.length}] ${formatChunkInfo(chunk)}`);
 
-    const chunkPromises = parallelChunks.map(async (chunk) => {
-      const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey });
 
-      console.log(`    ${formatChunkInfo(chunk)}`);
-
-      const prompt = `${STEP1_EXTRACTION_PROMPT}
+    const prompt = `${STEP1_EXTRACTION_PROMPT}
 
 TRANSCRIPCIÓN DEL VIDEO (Parte ${chunk.index + 1} de ${chunk.total}):
 ${chunk.text}
 
 IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado.`;
 
-      const result = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [prompt],
-        config: {
-          temperature: 1.0,
-        },
-      });
-
-      const text = result.text || '';
-      const mentions = parseRawMentions(text);
-
-      console.log(`    ✓ Chunk ${chunk.index + 1} completed: ${mentions.length} mentions found`);
-
-      return mentions;
+    const result = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: [prompt],
+      config: {
+        temperature: 1.0,
+      },
     });
 
-    const chunkResults = await Promise.all(chunkPromises);
-    allMentions.push(...chunkResults);
+    const text = result.text || '';
+    const mentions = parseRawMentions(text);
 
-    // Small delay between groups
-    if (i + MAX_PARALLEL_CHUNKS < chunks.length) {
-      await sleep(500);
+    console.log(`    ✓ Chunk ${chunk.index + 1} completed: ${mentions.length} mentions found`);
+
+    allMentions.push(mentions);
+
+    // Small delay between chunks to allow GC
+    if (i < chunks.length - 1) {
+      await sleep(300);
     }
   }
 

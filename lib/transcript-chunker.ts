@@ -4,6 +4,8 @@ import { RawMention } from './types';
 const MAX_TOKENS_PER_CHUNK = 20000; // Safe limit for Gemini context
 const CHARS_PER_TOKEN = 3.5; // Average for Spanish/English
 const MAX_CHUNK_CHARS = MAX_TOKENS_PER_CHUNK * CHARS_PER_TOKEN; // ~70K chars
+const MAX_CHUNK_CHARS_LARGE = 45000; // ~13K tokens - for transcripts >200K (memory-efficient)
+const LARGE_TRANSCRIPT_THRESHOLD = 200000; // Use smaller chunks above this
 const OVERLAP_CHARS = 2000; // Overlap to avoid missing references at boundaries
 
 interface TranscriptChunk {
@@ -36,13 +38,18 @@ export function chunkTranscript(transcript: string): TranscriptChunk[] {
     }];
   }
 
+  // Use smaller chunks for very large transcripts to reduce memory usage
+  const maxChunkChars = transcript.length > LARGE_TRANSCRIPT_THRESHOLD
+    ? MAX_CHUNK_CHARS_LARGE
+    : MAX_CHUNK_CHARS;
+
   const chunks: TranscriptChunk[] = [];
   let currentPos = 0;
   let chunkIndex = 0;
 
   while (currentPos < transcript.length) {
     // Calculate chunk boundaries
-    let endPos = Math.min(currentPos + MAX_CHUNK_CHARS, transcript.length);
+    let endPos = Math.min(currentPos + maxChunkChars, transcript.length);
 
     // If not at the end, try to find a sentence boundary
     if (endPos < transcript.length) {
