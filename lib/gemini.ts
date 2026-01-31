@@ -191,6 +191,7 @@ export async function completeReferenceWithSearch(
         contents: [prompt],
         config: {
           temperature: 0.3, // Lower temperature for more factual responses
+          tools: [{ googleSearch: {} }], // Enable Google Search grounding for factual info
         },
       });
 
@@ -284,6 +285,7 @@ IMPORTANTE: Incluye TODAS las referencias (${rawMentions.length} en total), no t
         contents: [prompt],
         config: {
           temperature: 0.3,
+          tools: [{ googleSearch: {} }], // Enable Google Search grounding for factual info
         },
       });
 
