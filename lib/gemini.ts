@@ -23,11 +23,18 @@ export async function analyzeTranscript(
   transcriptChunks: Array<{ text: string; offset: number; duration: number }>,
   apiKey: string
 ): Promise<RawMention[]> {
+  const transcriptSize = transcript.length;
+  const estimatedTokens = Math.ceil(transcriptSize / 3.5);
+
+  console.log(`[analyzeTranscript] Input: ${transcriptSize} chars (~${estimatedTokens} tokens)`);
+
   // Check if transcript needs chunking
   if (needsChunking(transcript)) {
-    console.log(`📊 Large transcript detected (${transcript.length} chars), using chunking strategy...`);
+    console.log(`📊 Large transcript detected (${transcriptSize} chars > 70K), using chunking strategy...`);
     return await analyzeTranscriptWithChunking(transcript, transcriptChunks, apiKey);
   }
+
+  console.log(`[analyzeTranscript] Using single-request strategy (transcript < 70K chars)`);
 
   // Small transcript - process normally
   const MAX_RETRIES = 3;
@@ -35,6 +42,9 @@ export async function analyzeTranscript(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
+      console.log(`[analyzeTranscript] Starting attempt ${attempt}/${MAX_RETRIES}...`);
+      console.log(`[analyzeTranscript] Transcript size: ${transcript.length} chars (~${Math.ceil(transcript.length / 3.5)} tokens)`);
+
       const ai = new GoogleGenAI({ apiKey });
 
       // Build a prompt with the full transcript
@@ -45,13 +55,30 @@ ${transcript}
 
 IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado buscando el texto en los chunks de transcripción.`;
 
-      const result = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [prompt],
-        config: {
-          temperature: 0.3, // Reduced from 0.4 for faster processing
-        },
+      console.log(`[analyzeTranscript] Sending request to Gemini API...`);
+      const requestStart = Date.now();
+
+      // Create timeout promise (2 minutes max for transcript analysis)
+      const TIMEOUT_MS = 120000; // 2 minutes
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Gemini API timeout after ${TIMEOUT_MS / 1000}s`));
+        }, TIMEOUT_MS);
       });
+
+      const result = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: [prompt],
+          config: {
+            temperature: 0.3, // Reduced from 0.4 for faster processing
+          },
+        }),
+        timeoutPromise,
+      ]) as any;
+
+      const requestTime = ((Date.now() - requestStart) / 1000).toFixed(1);
+      console.log(`[analyzeTranscript] ✓ Gemini API responded in ${requestTime}s`);
 
       const text = result.text || '';
 
