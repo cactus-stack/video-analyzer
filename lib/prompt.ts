@@ -51,11 +51,16 @@ export function getStep2CompletionPrompt(rawMention: string, context: string, ty
 
 Contexto: ${context}
 
+INSTRUCCIONES:
+- Haz búsquedas web RÁPIDAS (solo título + autor, 3-5 segundos máximo)
+- Si no encuentras resultados rápido, usa tu conocimiento interno del libro
+- Prioriza VELOCIDAD sobre búsquedas exhaustivas
+
 Necesito:
 1. Título completo del libro
 2. Autor(es)
 3. Año de publicación (si es posible)
-4. Enlaces a fuentes confiables (Wikipedia, Google Books, Goodreads, Amazon)
+4. Enlaces a fuentes confiables (SOLO si los encontraste rápido, sino déjalo vacío)
 
 Retorna SOLO un objeto JSON válido:
 {
@@ -78,12 +83,17 @@ Si no encuentras información suficiente, retorna:
 
 Contexto: ${context}
 
+INSTRUCCIONES:
+- Haz búsquedas web RÁPIDAS (3-5 segundos máximo)
+- Si no encuentras resultados rápido, usa tu conocimiento interno
+- Prioriza VELOCIDAD sobre búsquedas exhaustivas
+
 Necesito:
 1. Título completo del paper
 2. Autores (lista)
 3. Año de publicación
 4. Revista o journal (si aplica)
-5. Enlaces a fuentes (PubMed, ArXiv, Google Scholar, etc.)
+5. Enlaces a fuentes (SOLO si los encontraste rápido, sino déjalo vacío)
 
 Retorna SOLO un objeto JSON válido:
 {

@@ -273,19 +273,25 @@ async function completeBatchMegaRequest(
 
 ${mentionsText}
 
+INSTRUCCIONES PARA BÚSQUEDAS WEB:
+- Haz búsquedas RÁPIDAS y SENCILLAS (solo título + autor)
+- NO hagas búsquedas exhaustivas que tomen mucho tiempo
+- Si no encuentras resultados en 3-5 segundos, usa tu conocimiento interno
+- Prioriza VELOCIDAD sobre exhaustividad
+
 Para cada referencia, proporciona:
-- Título completo (si es libro/paper)
-- Autor(es)
-- Año (si aplica)
-- Fuentes de verificación (URLs reales si es posible)
+- **fullTitle**: El TÍTULO DE LA OBRA (libro, paper, grabados, etc.), NO el nombre del autor
+- **author**: El nombre del AUTOR de la obra
+- **year**: Año de publicación
+- **sources**: URLs de la OBRA ESPECÍFICA (no biografías del autor)
 
 Retorna SOLO un objeto JSON con este formato exacto:
 {
   "references": [
     {
       "index": 0,
-      "fullTitle": "Título completo",
-      "author": "Autor principal",
+      "fullTitle": "Título de la obra (ej: 'Los caprichos', 'El mito de Sísifo')",
+      "author": "Nombre del autor (ej: 'Francisco de Goya', 'Albert Camus')",
       "authors": ["Autor 1", "Autor 2"],
       "year": "Año",
       "journal": "Nombre de la revista (solo para papers)",
@@ -294,7 +300,13 @@ Retorna SOLO un objeto JSON con este formato exacto:
   ]
 }
 
-IMPORTANTE: Incluye TODAS las referencias (${rawMentions.length} en total), no te saltes ninguna.`;
+REGLAS CRÍTICAS:
+- fullTitle = OBRA/LIBRO, author = PERSONA
+- NUNCA pongas el nombre del autor en fullTitle
+- Si es una obra de arte (grabados, pinturas), ponla en fullTitle
+- Si sources tiene URLs, que sean de la OBRA, no del autor
+- Incluye TODAS las referencias (${rawMentions.length} en total)
+- Si una búsqueda toma mucho tiempo, sáltala y usa tu conocimiento`;
 
       console.log(`  [mega-batch ${batchIndex}] Attempting ${rawMentions.length} references (attempt ${attempt}/${MAX_RETRIES})...`);
 

@@ -155,41 +155,55 @@ function BookCard({ book, videoUrl, confidenceBadge }: { book: Book; videoUrl: s
   const timestampUrl = getYouTubeUrlWithTimestamp(videoUrl, book.timestamp);
 
   return (
-    <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-      <div className="flex items-start justify-between mb-2">
-        <h3 className="font-bold text-lg">{book.fullTitle}</h3>
-        {confidenceBadge(book.confidence)}
+    <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 dark:hover:border-blue-600 transition-colors">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <h3 className="font-bold text-xl text-gray-900 dark:text-gray-100 mb-1">
+            📚 {book.fullTitle}
+          </h3>
+          <p className="text-gray-700 dark:text-gray-300 font-medium">
+            {book.author} {book.year && <span className="text-gray-500 dark:text-gray-400">({book.year})</span>}
+          </p>
+        </div>
+        <div className="ml-3 flex-shrink-0">
+          {confidenceBadge(book.confidence)}
+        </div>
       </div>
-      <p className="text-gray-600 dark:text-gray-400 mb-2">Por {book.author} {book.year && `(${book.year})`}</p>
+
       {book.rawMention !== book.fullTitle && (
-        <p className="text-sm text-gray-500 dark:text-gray-500 mb-2">
+        <p className="text-sm text-gray-500 dark:text-gray-500 mb-3 italic">
           Mención original: &quot;{book.rawMention}&quot;
         </p>
       )}
-      <a
-        href={timestampUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-blue-500 hover:underline text-sm"
-      >
-        Ver en video ({book.timestamp})
-      </a>
-      {book.sources.length > 0 && (
-        <div className="mt-2 text-sm">
-          <span className="text-gray-600 dark:text-gray-400">Fuentes: </span>
-          {book.sources.map((source, idx) => (
-            <a
-              key={idx}
-              href={source}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-500 hover:underline mr-2"
-            >
-              Link {idx + 1}
-            </a>
-          ))}
-        </div>
-      )}
+
+      <div className="flex flex-wrap gap-3 items-center text-sm">
+        <a
+          href={timestampUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+        >
+          ▶️ Ver en video ({book.timestamp})
+        </a>
+
+        {book.sources.length > 0 && (
+          <>
+            <span className="text-gray-400">•</span>
+            <span className="text-gray-600 dark:text-gray-400">Fuentes:</span>
+            {book.sources.map((source, idx) => (
+              <a
+                key={idx}
+                href={source}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Link {idx + 1}
+              </a>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -198,23 +212,60 @@ function PaperCard({ paper, videoUrl, confidenceBadge }: { paper: Paper; videoUr
   const timestampUrl = getYouTubeUrlWithTimestamp(videoUrl, paper.timestamp);
 
   return (
-    <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-      <div className="flex items-start justify-between mb-2">
-        <h3 className="font-bold text-lg">{paper.fullTitle}</h3>
-        {confidenceBadge(paper.confidence)}
+    <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 dark:hover:border-blue-600 transition-colors">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <h3 className="font-bold text-xl text-gray-900 dark:text-gray-100 mb-1">
+            📄 {paper.fullTitle}
+          </h3>
+          <p className="text-gray-700 dark:text-gray-300 font-medium">
+            {paper.authors.join(', ')} {paper.year && <span className="text-gray-500 dark:text-gray-400">({paper.year})</span>}
+          </p>
+          {paper.journal && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              📰 {paper.journal}
+            </p>
+          )}
+        </div>
+        <div className="ml-3 flex-shrink-0">
+          {confidenceBadge(paper.confidence)}
+        </div>
       </div>
-      <p className="text-gray-600 dark:text-gray-400 mb-2">
-        {paper.authors.join(', ')} {paper.year && `(${paper.year})`}
-      </p>
-      {paper.journal && <p className="text-sm text-gray-500 dark:text-gray-500 mb-2">{paper.journal}</p>}
-      <a
-        href={timestampUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-blue-500 hover:underline text-sm"
-      >
-        Ver en video ({paper.timestamp})
-      </a>
+
+      {paper.rawMention !== paper.fullTitle && (
+        <p className="text-sm text-gray-500 dark:text-gray-500 mb-3 italic">
+          Mención original: &quot;{paper.rawMention}&quot;
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-3 items-center text-sm">
+        <a
+          href={timestampUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+        >
+          ▶️ Ver en video ({paper.timestamp})
+        </a>
+
+        {paper.sources.length > 0 && (
+          <>
+            <span className="text-gray-400">•</span>
+            <span className="text-gray-600 dark:text-gray-400">Fuentes:</span>
+            {paper.sources.map((source, idx) => (
+              <a
+                key={idx}
+                href={source}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Link {idx + 1}
+              </a>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -228,16 +279,24 @@ function WebSourceCard({ source, videoUrl, confidenceBadge }: { source: WebSourc
         <h3 className="font-bold text-lg">{source.title}</h3>
         {confidenceBadge(source.confidence)}
       </div>
+
+      {source.rawMention !== source.title && (
+        <p className="text-sm text-gray-500 dark:text-gray-500 mb-2">
+          Mención original: &quot;{source.rawMention}&quot;
+        </p>
+      )}
+
       {source.url && (
         <a
           href={source.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-500 hover:underline text-sm block mb-2"
+          className="text-blue-500 hover:underline text-sm block mb-2 break-all"
         >
-          {source.url}
+          🔗 {source.url}
         </a>
       )}
+
       <a
         href={timestampUrl}
         target="_blank"
