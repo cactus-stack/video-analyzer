@@ -174,6 +174,7 @@ export async function completeReferenceWithSearch(
   apiKey: string
 ): Promise<any> {
   const MAX_RETRIES = 3;
+  const REQUEST_TIMEOUT = 45000; // 45 seconds timeout per request
   let lastError: any;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -186,21 +187,35 @@ export async function completeReferenceWithSearch(
         rawMention.type
       );
 
-      const result = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [prompt],
-        config: {
-          temperature: 0.3, // Lower temperature for more factual responses
-          tools: [{ googleSearch: {} }], // Enable Google Search grounding for factual info
-        },
+      console.log(`[completeReference] Attempting: "${rawMention.rawText}" (attempt ${attempt}/${MAX_RETRIES})`);
+
+      // Create timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), REQUEST_TIMEOUT);
       });
 
+      // Race between actual request and timeout
+      const result = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: [prompt],
+          config: {
+            temperature: 0.3, // Lower temperature for more factual responses
+            // TODO: Re-enable grounding once we verify the format
+            // tools: [{ googleSearch: {} }],
+          },
+        }),
+        timeoutPromise,
+      ]) as any;
+
       const text = result.text || '';
+      console.log(`[completeReference] ✓ Success: "${rawMention.rawText}"`);
 
       // Parse JSON response
       return parseCompletedReference(text);
     } catch (error: any) {
       lastError = error;
+      console.error(`[completeReference] ✗ Error on "${rawMention.rawText}":`, error.message);
 
       // Check if it's a retryable error
       const isRetryable =
@@ -236,19 +251,21 @@ export async function completeReferenceWithSearch(
 }
 
 /**
- * Complete ALL references in a single request (much faster)
+ * Complete a batch of references in a single mega-request
  */
-export async function completeAllReferencesAtOnce(
+async function completeBatchMegaRequest(
   rawMentions: RawMention[],
-  apiKey: string
+  apiKey: string,
+  batchIndex: number
 ): Promise<Map<string, any>> {
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 2;
+  const REQUEST_TIMEOUT = 60000; // 60 seconds for mega-requests
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const ai = new GoogleGenAI({ apiKey });
 
-      // Build a mega prompt with all mentions
+      // Build mega prompt with all mentions in this batch
       const mentionsText = rawMentions.map((m, idx) =>
         `${idx + 1}. "${m.rawText}" (${m.type}) - Contexto: ${m.context}`
       ).join('\n');
@@ -280,14 +297,26 @@ Retorna SOLO un objeto JSON con este formato exacto:
 
 IMPORTANTE: Incluye TODAS las referencias (${rawMentions.length} en total), no te saltes ninguna.`;
 
-      const result = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [prompt],
-        config: {
-          temperature: 0.3,
-          tools: [{ googleSearch: {} }], // Enable Google Search grounding for factual info
-        },
+      console.log(`  [mega-batch ${batchIndex}] Attempting ${rawMentions.length} references (attempt ${attempt}/${MAX_RETRIES})...`);
+
+      // Create timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Mega-request timeout')), REQUEST_TIMEOUT);
       });
+
+      // Race between actual request and timeout
+      const result = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: [prompt],
+          config: {
+            temperature: 0.3,
+            // TODO: Re-enable grounding once we verify the format
+            // tools: [{ googleSearch: {} }],
+          },
+        }),
+        timeoutPromise,
+      ]) as any;
 
       const text = result.text || '';
 
@@ -308,25 +337,111 @@ IMPORTANTE: Incluye TODAS las referencias (${rawMentions.length} en total), no t
         }
       });
 
-      console.log(`✓ Completed ${results.size}/${rawMentions.length} references in single request`);
+      console.log(`  [mega-batch ${batchIndex}] ✓ Completed ${results.size}/${rawMentions.length} references`);
       return results;
 
     } catch (error: any) {
-      console.error(`Error completing all references (attempt ${attempt}/${MAX_RETRIES}):`, error.message);
+      console.error(`  [mega-batch ${batchIndex}] ✗ Error (attempt ${attempt}/${MAX_RETRIES}):`, error.message);
 
       if (attempt === MAX_RETRIES) {
-        console.log('Falling back to batch completion...');
-        return batchCompleteReferences(rawMentions, apiKey);
+        // Fallback: process individually
+        console.log(`  [mega-batch ${batchIndex}] Falling back to individual processing...`);
+        const fallbackResults = new Map<string, any>();
+
+        for (const mention of rawMentions) {
+          try {
+            const data = await completeReferenceWithSearch(mention, apiKey);
+            fallbackResults.set(JSON.stringify(mention), data);
+          } catch (err) {
+            fallbackResults.set(JSON.stringify(mention), {
+              fullTitle: mention.rawText,
+              author: 'Unknown',
+              sources: [],
+            });
+          }
+        }
+
+        return fallbackResults;
       }
 
-      const delayMs = Math.pow(2, attempt) * 1500;
-      console.log(`Retrying in ${delayMs / 1000}s...`);
+      const delayMs = Math.pow(2, attempt) * 1000;
       await sleep(delayMs);
     }
   }
 
-  // Fallback
   return new Map();
+}
+
+/**
+ * INTELLIGENT BATCHING: Complete references using optimal mega-request batching
+ * Scales from 10 to 200+ references efficiently
+ */
+export async function batchCompleteReferencesIntelligent(
+  rawMentions: RawMention[],
+  apiKey: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<Map<string, any>> {
+  const MEGA_BATCH_SIZE = 18; // Optimal: 15-20 mentions per mega-request
+  const PARALLEL_MEGA_BATCHES = 2; // Process 2 mega-requests in parallel
+  const results = new Map<string, any>();
+
+  // Create mega-batches
+  const megaBatches: RawMention[][] = [];
+  for (let i = 0; i < rawMentions.length; i += MEGA_BATCH_SIZE) {
+    megaBatches.push(rawMentions.slice(i, Math.min(i + MEGA_BATCH_SIZE, rawMentions.length)));
+  }
+
+  console.log(`  → Intelligent batching: ${megaBatches.length} mega-batches (${MEGA_BATCH_SIZE} items each, ${PARALLEL_MEGA_BATCHES} in parallel)`);
+
+  // Process mega-batches in parallel groups
+  for (let i = 0; i < megaBatches.length; i += PARALLEL_MEGA_BATCHES) {
+    const parallelMegaBatches = megaBatches.slice(i, Math.min(i + PARALLEL_MEGA_BATCHES, megaBatches.length));
+    const groupIndex = Math.floor(i / PARALLEL_MEGA_BATCHES) + 1;
+    const totalGroups = Math.ceil(megaBatches.length / PARALLEL_MEGA_BATCHES);
+
+    console.log(`[intelligentBatch] Processing group ${groupIndex}/${totalGroups} (${parallelMegaBatches.length} mega-batches in parallel)`);
+
+    // Process multiple mega-batches in parallel
+    const parallelPromises = parallelMegaBatches.map((megaBatch, idx) =>
+      completeBatchMegaRequest(megaBatch, apiKey, i + idx + 1)
+    );
+
+    // Wait for all parallel mega-batches to complete
+    const parallelResults = await Promise.all(parallelPromises);
+
+    // Merge results
+    parallelResults.forEach((batchResults) => {
+      batchResults.forEach((value, key) => {
+        results.set(key, value);
+      });
+    });
+
+    // Update progress
+    if (onProgress) {
+      const completed = Math.min((i + PARALLEL_MEGA_BATCHES) * MEGA_BATCH_SIZE, rawMentions.length);
+      onProgress(completed, rawMentions.length);
+    }
+
+    // Small delay between groups
+    if (i + PARALLEL_MEGA_BATCHES < megaBatches.length) {
+      await sleep(1500);
+    }
+  }
+
+  console.log(`✓ Intelligent batching completed: ${results.size}/${rawMentions.length} references`);
+  return results;
+}
+
+/**
+ * Complete ALL references in a single request (only for small videos)
+ * @deprecated Use batchCompleteReferencesIntelligent for better reliability
+ */
+export async function completeAllReferencesAtOnce(
+  rawMentions: RawMention[],
+  apiKey: string
+): Promise<Map<string, any>> {
+  console.log(`  → Single mega-request for ${rawMentions.length} references...`);
+  return completeBatchMegaRequest(rawMentions, apiKey, 1);
 }
 
 /**
@@ -338,8 +453,8 @@ export async function batchCompleteReferences(
   apiKey: string,
   onProgress?: (current: number, total: number) => void
 ): Promise<Map<string, any>> {
-  const BATCH_SIZE = 15; // Items per batch
-  const PARALLEL_BATCHES = 3; // Process 3 batches simultaneously for speed
+  const BATCH_SIZE = 10; // Items per batch (reduced from 15)
+  const PARALLEL_BATCHES = 2; // Process 2 batches simultaneously (reduced from 3 to avoid rate limiting)
   const results = new Map<string, any>();
 
   // Create all batches
@@ -348,19 +463,27 @@ export async function batchCompleteReferences(
     batches.push(rawMentions.slice(i, Math.min(i + BATCH_SIZE, rawMentions.length)));
   }
 
-  console.log(`  → Processing ${batches.length} batches (${BATCH_SIZE} items each, ${PARALLEL_BATCHES} batches in parallel)`);
+  console.log(`  → Processing ${batches.length} batches (${BATCH_SIZE} items each, ${PARALLEL_BATCHES} batches in parallel, staggered requests)`);
 
   // Process batches in parallel groups
   for (let i = 0; i < batches.length; i += PARALLEL_BATCHES) {
     const parallelBatches = batches.slice(i, Math.min(i + PARALLEL_BATCHES, batches.length));
+    const batchGroupIndex = Math.floor(i / PARALLEL_BATCHES) + 1;
+    const totalBatchGroups = Math.ceil(batches.length / PARALLEL_BATCHES);
+
+    console.log(`[batchComplete] Processing batch group ${batchGroupIndex}/${totalBatchGroups} (${parallelBatches.length} batches in parallel)`);
 
     // Process multiple batches in parallel
-    const parallelPromises = parallelBatches.map(async (batch) => {
-      const batchPromises = batch.map((mention) =>
-        completeReferenceWithSearch(mention, apiKey)
+    const parallelPromises = parallelBatches.map(async (batch, batchIndex) => {
+      console.log(`  [batch ${i + batchIndex + 1}] Starting ${batch.length} references...`);
+
+      // Process items in batch with slight delay to avoid rate limiting
+      const batchPromises = batch.map((mention, idx) =>
+        sleep(idx * 200) // Stagger requests by 200ms each
+          .then(() => completeReferenceWithSearch(mention, apiKey))
           .then((data) => ({ mention, data }))
           .catch((error) => {
-            console.error('Error completing reference:', error.message);
+            console.error(`  [batch ${i + batchIndex + 1}] Error on "${mention.rawText}":`, error.message);
             return {
               mention,
               data: { fullTitle: mention.rawText, author: 'Unknown', sources: [] },
@@ -368,11 +491,15 @@ export async function batchCompleteReferences(
           })
       );
 
-      return Promise.all(batchPromises);
+      const results = await Promise.all(batchPromises);
+      console.log(`  [batch ${i + batchIndex + 1}] ✓ Completed ${results.length} references`);
+      return results;
     });
 
     // Wait for all parallel batches to complete
+    console.log(`  [batchComplete] Waiting for ${parallelPromises.length} parallel batches...`);
     const parallelResults = await Promise.all(parallelPromises);
+    console.log(`  [batchComplete] ✓ Batch group ${batchGroupIndex} completed`);
 
     // Flatten and store results
     parallelResults.flat().forEach(({ mention, data }) => {
@@ -387,7 +514,7 @@ export async function batchCompleteReferences(
 
     // Small delay between parallel batch groups to avoid overwhelming API
     if (i + PARALLEL_BATCHES < batches.length) {
-      await sleep(1500); // 1.5s delay between groups
+      await sleep(2000); // 2s delay between groups to avoid rate limiting
     }
   }
 

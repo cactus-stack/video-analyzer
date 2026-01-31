@@ -7,7 +7,7 @@ import {
   analyzeVideoSegment,
   analyzeTranscript,
   completeAllReferencesAtOnce,
-  batchCompleteReferences,
+  batchCompleteReferencesIntelligent,
   mergeReferences,
 } from '@/lib/gemini';
 import { checkDailyLimit, trackUsage, isRedisAvailable } from '@/lib/usage-tracker';
@@ -217,7 +217,7 @@ export async function POST(request: NextRequest) {
     const uniqueMentions = deduplicateMentions(allRawMentions);
     console.log(`Found ${uniqueMentions.length} unique mentions after deduplication`);
 
-    // Step 6: Complete references (Step 2 - Adaptive strategy, skipped in raw mode)
+    // Step 6: Complete references (Step 2 - Intelligent batching strategy, skipped in raw mode)
     let completedData = new Map<string, any>();
 
     if (analysisMode === 'raw') {
@@ -225,16 +225,16 @@ export async function POST(request: NextRequest) {
       console.log('⊘ Step 2 skipped (raw mode - no reference completion)');
     } else if (completeReferences) {
       const step2Start = Date.now();
-      const MEGA_REQUEST_THRESHOLD = 30; // Optimal threshold for speed vs reliability
+      const SINGLE_REQUEST_THRESHOLD = 15; // Use single request only for very small videos
 
-      if (uniqueMentions.length <= MEGA_REQUEST_THRESHOLD) {
-        // Small video: Use mega-request for maximum speed
-        console.log(`Step 2: Completing ${uniqueMentions.length} references with MEGA-REQUEST (fast mode)...`);
+      if (uniqueMentions.length <= SINGLE_REQUEST_THRESHOLD) {
+        // Very small video: Single mega-request
+        console.log(`Step 2: Completing ${uniqueMentions.length} references with SINGLE MEGA-REQUEST...`);
         completedData = await completeAllReferencesAtOnce(uniqueMentions, apiKey);
       } else {
-        // Large video: Use batch mode for reliability
-        console.log(`Step 2: Completing ${uniqueMentions.length} references with BATCH MODE (reliable for large videos)...`);
-        completedData = await batchCompleteReferences(uniqueMentions, apiKey, (current, total) => {
+        // Medium to large videos: Intelligent batching (scales from 15 to 200+ references)
+        console.log(`Step 2: Completing ${uniqueMentions.length} references with INTELLIGENT BATCHING...`);
+        completedData = await batchCompleteReferencesIntelligent(uniqueMentions, apiKey, (current, total) => {
           console.log(`  Progress: ${current}/${total} references completed`);
         });
       }
