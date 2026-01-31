@@ -201,8 +201,7 @@ export async function completeReferenceWithSearch(
           contents: [prompt],
           config: {
             temperature: 0.3, // Lower temperature for more factual responses
-            // TODO: Re-enable grounding once we verify the format
-            // tools: [{ googleSearch: {} }],
+            tools: [{ googleSearch: {} }], // Google Search grounding for factual verification
           },
         }),
         timeoutPromise,
@@ -311,8 +310,7 @@ IMPORTANTE: Incluye TODAS las referencias (${rawMentions.length} en total), no t
           contents: [prompt],
           config: {
             temperature: 0.3,
-            // TODO: Re-enable grounding once we verify the format
-            // tools: [{ googleSearch: {} }],
+            tools: [{ googleSearch: {} }], // Google Search grounding for factual verification
           },
         }),
         timeoutPromise,
