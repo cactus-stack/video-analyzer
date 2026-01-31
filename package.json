@@ -9,7 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
+    "@danielxceron/youtube-transcript": "^1.2.3",
+    "@google/genai": "^1.39.0",
     "@types/node": "^25.1.0",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",

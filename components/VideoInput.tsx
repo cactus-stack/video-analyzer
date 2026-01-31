@@ -114,7 +114,6 @@ export default function VideoInput({ auth, onAnalysisComplete }: VideoInputProps
         selectedMode={analysisMode}
         onChange={setAnalysisMode}
         disabled={loading}
-        disablePremium={auth.mode === 'password'} // Friends can't use Premium mode
       />
 
       {/* Analyze Button */}

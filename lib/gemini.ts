@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI, MediaResolution } from '@google/genai';
 import { RawMention, Book, Paper, WebSource, Author } from './types';
 import { STEP1_EXTRACTION_PROMPT, getStep2CompletionPrompt } from './prompt';
 
@@ -22,8 +22,7 @@ export async function analyzeTranscript(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+      const ai = new GoogleGenAI({ apiKey });
 
       // Build a prompt with the full transcript
       const prompt = `${STEP1_EXTRACTION_PROMPT}
@@ -33,15 +32,15 @@ ${transcript}
 
 IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado buscando el texto en los chunks de transcripción.`;
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [prompt],
+        config: {
           temperature: 0.4,
         },
       });
 
-      const response = result.response;
-      const text = response.text();
+      const text = result.text || '';
 
       // Parse JSON response
       const rawMentions = parseRawMentions(text);
@@ -106,45 +105,37 @@ export async function analyzeVideoSegment(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+      const ai = new GoogleGenAI({ apiKey });
 
-    // Prepare video file part with media resolution control
-    const videoPart: any = {
-      fileData: {
-        fileUri: videoUrl,
-        mimeType: 'video/*',
-      },
-      // Set media resolution: LOW = 70 tokens/frame (~100 tokens/second video)
-      // vs default = 258 tokens/frame (~300 tokens/second video)
-      mediaResolution: resolution === 'low' ? 'MEDIA_RESOLUTION_LOW' : 'MEDIA_RESOLUTION_MEDIUM',
-    };
-
-    // Add video metadata for segmentation if offsets provided
-    if (startOffset !== undefined && endOffset !== undefined) {
-      videoPart.videoMetadata = {
-        startOffset: { seconds: startOffset },
-        endOffset: { seconds: endOffset },
-      };
-    }
-
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            videoPart,
-            { text: STEP1_EXTRACTION_PROMPT },
-          ],
+      // Prepare video file part with mediaResolution
+      // LOW = 70 tokens/frame (~$0.18/hour), MEDIUM/HIGH = 258 tokens/frame (~$0.54/hour)
+      const videoPart: any = {
+        inlineData: {
+          mimeType: 'video/*',
+          data: videoUrl, // For YouTube URLs, the SDK handles it
         },
-      ],
-      generationConfig: {
-        temperature: 0.4,
-      },
-    });
+        mediaResolution: resolution === 'low'
+          ? MediaResolution.MEDIA_RESOLUTION_LOW
+          : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+      };
 
-    const response = result.response;
-    const text = response.text();
+      // Add video metadata for segmentation if offsets provided
+      if (startOffset !== undefined && endOffset !== undefined) {
+        videoPart.videoMetadata = {
+          startOffset: { seconds: startOffset },
+          endOffset: { seconds: endOffset },
+        };
+      }
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [videoPart, STEP1_EXTRACTION_PROMPT],
+        config: {
+          temperature: 0.4,
+        },
+      });
+
+      const text = result.text || '';
 
       // Parse JSON response
       return parseRawMentions(text);
@@ -187,10 +178,7 @@ export async function completeReferenceWithSearch(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-3-flash-preview',
-      });
+      const ai = new GoogleGenAI({ apiKey });
 
       const prompt = getStep2CompletionPrompt(
         rawMention.rawText,
@@ -198,18 +186,15 @@ export async function completeReferenceWithSearch(
         rawMention.type
       );
 
-      // Note: Google Search grounding requires specific API configuration
-      // For now, we'll use the model without grounding and rely on its knowledge
-      // In production, you'd enable grounding via API settings
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [prompt],
+        config: {
           temperature: 0.3, // Lower temperature for more factual responses
         },
       });
 
-      const response = result.response;
-      const text = response.text();
+      const text = result.text || '';
 
       // Parse JSON response
       return parseCompletedReference(text);
@@ -260,8 +245,7 @@ export async function completeAllReferencesAtOnce(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+      const ai = new GoogleGenAI({ apiKey });
 
       // Build a mega prompt with all mentions
       const mentionsText = rawMentions.map((m, idx) =>
@@ -295,14 +279,15 @@ Retorna SOLO un objeto JSON con este formato exacto:
 
 IMPORTANTE: Incluye TODAS las referencias (${rawMentions.length} en total), no te saltes ninguna.`;
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [prompt],
+        config: {
           temperature: 0.3,
         },
       });
 
-      const text = result.response.text();
+      const text = result.text || '';
 
       // Parse the mega response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
