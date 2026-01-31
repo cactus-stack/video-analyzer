@@ -594,43 +594,42 @@ export function mergeReferences(
     const key = JSON.stringify(mention);
     const completed = completedData.get(key);
 
-    if (!completed) return;
-
     // Determine confidence based on completion quality
-    const confidence = determineConfidence(completed);
+    // If no completed data (raw mode), use 'low' confidence with raw mention data
+    const confidence = completed ? determineConfidence(completed) : 'low';
 
     if (mention.type === 'book') {
       books.push({
         rawMention: mention.rawText,
-        fullTitle: completed.fullTitle || mention.rawText,
-        author: completed.author || 'Unknown',
-        year: completed.year,
+        fullTitle: completed?.fullTitle || mention.rawText,
+        author: completed?.author || 'Unknown',
+        year: completed?.year,
         timestamp: mention.timestamp,
         confidence,
-        sources: completed.sources || [],
+        sources: completed?.sources || [],
       });
     } else if (mention.type === 'paper') {
       papers.push({
         rawMention: mention.rawText,
-        fullTitle: completed.fullTitle || mention.rawText,
-        authors: completed.authors || ['Unknown'],
-        year: completed.year,
-        journal: completed.journal,
+        fullTitle: completed?.fullTitle || mention.rawText,
+        authors: completed?.authors || ['Unknown'],
+        year: completed?.year,
+        journal: completed?.journal,
         timestamp: mention.timestamp,
         confidence,
-        sources: completed.sources || [],
+        sources: completed?.sources || [],
       });
     } else if (mention.type === 'web') {
       webSources.push({
         rawMention: mention.rawText,
-        title: completed.title || mention.rawText,
-        url: completed.url || '',
+        title: completed?.title || mention.rawText,
+        url: completed?.url || '',
         timestamp: mention.timestamp,
         confidence,
       });
     } else if (mention.type === 'author' || mention.type === 'concept') {
       authors.push({
-        name: completed.fullName || mention.rawText,
+        name: completed?.fullName || mention.rawText,
         context: mention.context,
         timestamp: mention.timestamp,
       });

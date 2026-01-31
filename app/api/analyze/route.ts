@@ -17,6 +17,13 @@ import { checkDailyLimit, trackUsage, isRedisAvailable } from '@/lib/usage-track
 export const maxDuration = 300; // 5 minutes
 
 export async function POST(request: NextRequest) {
+  // Check if client disconnected
+  const checkClientConnected = () => {
+    if (request.signal.aborted) {
+      throw new Error('Client disconnected');
+    }
+  };
+
   try {
     const body: AnalyzeRequest = await request.json();
     const {
@@ -29,6 +36,9 @@ export async function POST(request: NextRequest) {
       resolution = 'low',
       completeReferences = true
     } = body;
+
+    // Check connection before starting
+    checkClientConnected();
 
     // Validate YouTube URL
     if (!validateYouTubeUrl(videoUrl)) {
@@ -147,8 +157,10 @@ export async function POST(request: NextRequest) {
       }
 
       console.log(`✓ Transcript fetched: ${transcriptData.text.length} characters`);
+      checkClientConnected(); // Check before expensive operation
       allRawMentions = await analyzeTranscript(transcriptData.text, transcriptData.chunks, apiKey);
       console.log(`✓ Step 1 (transcript analysis) completed in ${((Date.now() - step1Start) / 1000).toFixed(1)}s`);
+      checkClientConnected(); // Check after Step 1
 
     } else if (analysisMode === 'video') {
       // VIDEO MODE: Full video analysis for visual content
@@ -228,6 +240,7 @@ export async function POST(request: NextRequest) {
       // Raw mode: no Step 2
       console.log('⊘ Step 2 skipped (raw mode - no reference completion)');
     } else if (completeReferences) {
+      checkClientConnected(); // Check before expensive Step 2
       const step2Start = Date.now();
       const SINGLE_REQUEST_THRESHOLD = 15; // Use single request only for very small videos
 
@@ -269,6 +282,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error: any) {
+    // Check if client disconnected
+    if (error.message === 'Client disconnected') {
+      console.log('⚠️  Client disconnected, stopping processing');
+      return NextResponse.json(
+        { error: 'Request cancelled by client' },
+        { status: 499 } // Non-standard but commonly used for client closed request
+      );
+    }
+
     console.error('Error in analyze route:', error);
 
     // Check if it's a token limit error
