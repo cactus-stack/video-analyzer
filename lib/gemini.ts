@@ -37,7 +37,7 @@ export async function analyzeTranscript(
   console.log(`[analyzeTranscript] Using single-request strategy (transcript < 70K chars)`);
 
   // Small transcript - process normally
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 5; // Increased from 3 due to Railway<>Gemini network issues
   let lastError: any;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -108,21 +108,30 @@ IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado buscan
       return mentionsWithTimestamps;
     } catch (error: any) {
       lastError = error;
-      console.error(`Error analyzing transcript (attempt ${attempt}/${MAX_RETRIES}):`, error.message);
+      console.error(`[analyzeTranscript] ❌ Error on attempt ${attempt}/${MAX_RETRIES}:`, {
+        message: error.message,
+        type: error.name,
+        code: error.code,
+      });
 
       const isRetryable =
         error.message?.includes('fetch failed') ||
         error.message?.includes('ECONNRESET') ||
+        error.message?.includes('ETIMEDOUT') ||
         error.message?.includes('timeout') ||
         error.message?.includes('429') ||
-        error.message?.includes('503');
+        error.message?.includes('503') ||
+        error.message?.includes('ENOTFOUND') ||
+        error.code === 'ECONNREFUSED';
 
       if (!isRetryable || attempt === MAX_RETRIES) {
+        console.error(`[analyzeTranscript] 💥 Giving up after ${attempt} attempts`);
         throw new Error(`Failed to analyze transcript after ${attempt} attempts: ${error.message}`);
       }
 
-      const delayMs = Math.pow(2, attempt) * 1000;
-      console.log(`Retrying in ${delayMs / 1000}s...`);
+      // Aggressive exponential backoff for network issues: 5s, 15s, 45s, 135s (2.25min max)
+      const delayMs = Math.min(Math.pow(3, attempt) * 1000, 135000);
+      console.log(`[analyzeTranscript] 🔄 Network error detected, retrying in ${delayMs / 1000}s...`);
       await sleep(delayMs);
     }
   }
