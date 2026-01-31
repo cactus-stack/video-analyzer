@@ -1,4 +1,4 @@
-import { GoogleGenAI, MediaResolution } from '@google/genai';
+import { GoogleGenAI, createPartFromUri, MediaResolution } from '@google/genai';
 import { RawMention, Book, Paper, WebSource, Author } from './types';
 import { STEP1_EXTRACTION_PROMPT, getStep2CompletionPrompt } from './prompt';
 
@@ -107,31 +107,29 @@ export async function analyzeVideoSegment(
     try {
       const ai = new GoogleGenAI({ apiKey });
 
-      // Prepare video file part with mediaResolution
-      // LOW = 70 tokens/frame (~$0.18/hour), MEDIUM/HIGH = 258 tokens/frame (~$0.54/hour)
-      const videoPart: any = {
-        inlineData: {
-          mimeType: 'video/*',
-          data: videoUrl, // For YouTube URLs, the SDK handles it
-        },
-        mediaResolution: resolution === 'low'
-          ? MediaResolution.MEDIA_RESOLUTION_LOW
-          : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
-      };
+      // Use fileData (fileUri) for YouTube URLs - inlineData expects base64, not URLs
+      const videoPart = createPartFromUri(videoUrl, 'video/mp4');
 
       // Add video metadata for segmentation if offsets provided
       if (startOffset !== undefined && endOffset !== undefined) {
-        videoPart.videoMetadata = {
+        (videoPart as any).videoMetadata = {
           startOffset: { seconds: startOffset },
           endOffset: { seconds: endOffset },
         };
       }
+
+      // LOW = ~70 tokens/frame (cheaper), set globally in config
+      const mediaRes =
+        resolution === 'low'
+          ? MediaResolution.MEDIA_RESOLUTION_LOW
+          : MediaResolution.MEDIA_RESOLUTION_MEDIUM;
 
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: [videoPart, STEP1_EXTRACTION_PROMPT],
         config: {
           temperature: 0.4,
+          mediaResolution: mediaRes,
         },
       });
 

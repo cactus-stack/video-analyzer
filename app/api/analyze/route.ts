@@ -12,6 +12,10 @@ import {
 } from '@/lib/gemini';
 import { checkDailyLimit, trackUsage, isRedisAvailable } from '@/lib/usage-tracker';
 
+// Configure Vercel timeout - requires Pro plan for >60s
+// Free/Hobby: 10s, Pro: up to 300s (5 minutes)
+export const maxDuration = 300; // 5 minutes
+
 export async function POST(request: NextRequest) {
   try {
     const body: AnalyzeRequest = await request.json();

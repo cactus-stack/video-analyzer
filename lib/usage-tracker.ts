@@ -1,18 +1,73 @@
-import { Redis } from '@upstash/redis';
+import { Redis as UpstashRedis } from '@upstash/redis';
+import IORedis from 'ioredis';
 import { DailyStats } from './types';
 
-// Initialize Redis client (only if credentials are available)
-let redis: Redis | null = null;
+// Unified Redis interface
+interface RedisClient {
+  get(key: string): Promise<number | null>;
+  incrby(key: string, increment: number): Promise<number>;
+  expire(key: string, seconds: number): Promise<number>;
+}
+
+// Initialize Redis client (supports both Upstash and Railway Redis)
+let redis: RedisClient | null = null;
 
 try {
+  // Option 1: Upstash Redis (REST API) - for Vercel or manual setup
   if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redis = new Redis({
+    const upstashClient = new UpstashRedis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
     });
+
+    redis = {
+      async get(key: string): Promise<number | null> {
+        const value = await upstashClient.get<number>(key);
+        return value;
+      },
+      async incrby(key: string, increment: number): Promise<number> {
+        return await upstashClient.incrby(key, increment);
+      },
+      async expire(key: string, seconds: number): Promise<number> {
+        return await upstashClient.expire(key, seconds);
+      },
+    };
+
+    console.log('✓ Redis initialized: Upstash (REST API)');
+  }
+  // Option 2: Railway Redis (standard Redis TCP) - for Railway deployment
+  else if (process.env.REDIS_URL) {
+    const ioredisClient = new IORedis(process.env.REDIS_URL, {
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: true,
+      lazyConnect: true,
+    });
+
+    // Connect asynchronously
+    ioredisClient.connect().catch((err) => {
+      console.error('Failed to connect to Railway Redis:', err);
+    });
+
+    redis = {
+      async get(key: string): Promise<number | null> {
+        const value = await ioredisClient.get(key);
+        return value ? parseInt(value, 10) : null;
+      },
+      async incrby(key: string, increment: number): Promise<number> {
+        return await ioredisClient.incrby(key, increment);
+      },
+      async expire(key: string, seconds: number): Promise<number> {
+        return await ioredisClient.expire(key, seconds);
+      },
+    };
+
+    console.log('✓ Redis initialized: Railway (REDIS_URL)');
+  } else {
+    console.warn('⚠️  No Redis configured - usage tracking disabled');
   }
 } catch (error) {
-  console.warn('Redis not configured, usage tracking disabled:', error);
+  console.error('Redis initialization error:', error);
+  redis = null;
 }
 
 /**
@@ -31,7 +86,7 @@ export async function getDailyUsage(group: 'friends' | 'owner'): Promise<number>
 
   try {
     const key = getTodayKey(group);
-    const usage = await redis.get<number>(key);
+    const usage = await redis.get(key);
     return usage || 0;
   } catch (error) {
     console.error('Error getting daily usage:', error);
@@ -102,7 +157,7 @@ export async function getUsageStats(group: 'friends' | 'owner', days: number = 3
       const dateStr = date.toISOString().split('T')[0];
       const key = `usage:${group}:${dateStr}`;
 
-      const usageInSeconds = await redis.get<number>(key);
+      const usageInSeconds = await redis.get(key);
       const hours = usageInSeconds ? usageInSeconds / 3600 : 0;
 
       stats.push({

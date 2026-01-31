@@ -2,41 +2,42 @@
  * Step 1: Extract raw mentions from video
  * This prompt is designed to catch ALL references, even incomplete ones
  */
-export const STEP1_EXTRACTION_PROMPT = `Analiza este video de YouTube y extrae TODAS las referencias mencionadas, incluso si están incompletas o parciales.
+export const STEP1_EXTRACTION_PROMPT = `Analiza esta transcripción de YouTube y extrae TODAS las referencias mencionadas, incluso si están incompletas o parciales.
 
 Busca y extrae:
-1. **Libros** - Incluso menciones parciales como "ese libro de Camus sobre el absurdo", "el libro del martillo" (refiriéndose a Nietzsche), etc.
+1. **Libros** - Títulos de libros, incluso menciones parciales como "ese libro de Camus sobre el absurdo"
 2. **Papers o estudios académicos** - Estudios científicos, investigaciones, papers citados
-3. **Artículos y fuentes web** - Artículos mencionados, blogs, sitios web citados
-4. **Autores citados** - Filósofos, escritores, pensadores mencionados aunque no se cite una obra específica
-5. **Conceptos filosóficos o teóricos con autor** - Ideas asociadas a autores específicos
+3. **Artículos y fuentes web** - Artículos, blogs, sitios web mencionados
+4. **Autores citados** - Filósofos, escritores, pensadores (solo si se mencionan EXPLÍCITAMENTE por nombre)
+5. **Conceptos filosóficos** - Ideas o teorías mencionadas
 
 Para cada mención, incluye:
-- **type**: El tipo de referencia (book, paper, web, author, concept)
-- **rawText**: El texto EXACTO como se menciona en el video (no inventes ni completes nada)
-- **context**: Contexto breve de por qué se menciona (1-2 oraciones)
-- **timestamp**: Tiempo aproximado en formato MM:SS o HH:MM:SS
+- **type**: El tipo (book, paper, web, author, concept)
+- **rawText**: El texto EXACTO como aparece en la transcripción (NO inventes ni completes)
+- **context**: Contexto breve (1 oración)
+- **timestamp**: Tiempo aproximado en formato MM:SS
 
-IMPORTANTE:
-- NO intentes completar información que no se menciona explícitamente
-- Si solo dicen "Camus", extrae "Camus" (no inventes un título de libro)
-- Si dicen "ese filósofo del martillo", extrae exactamente eso
-- Captura menciones parciales - el paso 2 las completará
-- Incluye el timestamp lo más preciso posible
+REGLAS CRÍTICAS:
+❌ NO extraigas palabras sueltas o fragmentos sin sentido ("de les", "jates")
+❌ NO extraigas conectores o artículos ("y", "el", "de")
+❌ NO combines nombres que se mencionan separados ("adorno y Jorge" → extrae "Adorno" y "Jorge" por separado)
+✅ SOLO extrae nombres completos, títulos reconocibles, o conceptos claros
+✅ Si mencionan varios autores juntos, extrae cada uno por separado
+✅ Verifica que rawText tenga sentido por sí solo
 
-Retorna SOLO un objeto JSON válido con este formato:
+Retorna SOLO un objeto JSON válido:
 {
   "rawMentions": [
     {
       "type": "book",
-      "rawText": "ese libro de Camus sobre el absurdo",
-      "context": "Menciona este libro al hablar sobre el existencialismo y el sentido de la vida",
+      "rawText": "El mito de Sísifo",
+      "context": "Menciona este libro al hablar sobre el absurdo",
       "timestamp": "15:32"
     },
     {
       "type": "author",
       "rawText": "Nietzsche",
-      "context": "Cita a Nietzsche al discutir la moral y los valores",
+      "context": "Cita a Nietzsche al discutir la moral",
       "timestamp": "23:15"
     }
   ]
