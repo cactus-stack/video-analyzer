@@ -59,7 +59,7 @@ IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado buscan
       const requestStart = Date.now();
 
       // Use STREAMING for better UX (like Cursor/Copilot)
-      const stream = ai.models.generateContentStream({
+      const stream = await ai.models.generateContentStream({
         model: 'gemini-3-flash-preview',
         contents: [prompt],
         config: {
@@ -69,7 +69,7 @@ IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado buscan
 
       let fullText = '';
       let chunkCount = 0;
-      let firstChunkTime = 0;
+      let firstChunkTime = '0';
 
       console.log(`[analyzeTranscript] 🌊 Streaming started...`);
 
