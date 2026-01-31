@@ -36,7 +36,7 @@ IMPORTANTE: Para cada mención, intenta encontrar el timestamp aproximado buscan
         model: 'gemini-3-flash-preview',
         contents: [prompt],
         config: {
-          temperature: 0.4,
+          temperature: 0.3, // Reduced from 0.4 for faster processing
         },
       });
 
@@ -319,7 +319,7 @@ REGLAS CRÍTICAS:
           model: 'gemini-3-flash-preview',
           contents: [prompt],
           config: {
-            temperature: 0.3,
+            temperature: 0.1, // Lower temperature = faster, more deterministic (was 0.3)
             tools: [{ googleSearch: {} }], // Google Search grounding for factual verification
           },
         }),
@@ -389,8 +389,8 @@ export async function batchCompleteReferencesIntelligent(
   apiKey: string,
   onProgress?: (current: number, total: number) => void
 ): Promise<Map<string, any>> {
-  const MEGA_BATCH_SIZE = 18; // Optimal: 15-20 mentions per mega-request
-  const PARALLEL_MEGA_BATCHES = 2; // Process 2 mega-requests in parallel
+  const MEGA_BATCH_SIZE = 25; // Increased: handle more mentions per request (was 18)
+  const PARALLEL_MEGA_BATCHES = 3; // Increased: process 3 mega-requests in parallel (was 2)
   const results = new Map<string, any>();
 
   // Create mega-batches
@@ -430,9 +430,9 @@ export async function batchCompleteReferencesIntelligent(
       onProgress(completed, rawMentions.length);
     }
 
-    // Small delay between groups
+    // Small delay between groups to avoid rate limiting
     if (i + PARALLEL_MEGA_BATCHES < megaBatches.length) {
-      await sleep(1500);
+      await sleep(800); // Reduced from 1500ms for faster processing
     }
   }
 
